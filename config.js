@@ -45,6 +45,8 @@ const CLIENT_TO_MARKET = {
   "fundiciones":   "Fundición"
 };
 
+
+const RESULTADOS = ["Ganada", "Perdida"];
 const DEMO_MODE = false;
 
 window.DASHBOARD_CONFIG = {
@@ -55,5 +57,6 @@ window.DASHBOARD_CONFIG = {
   ETAPAS,
   MARKETS,
   CLIENT_TO_MARKET,
+  RESULTADOS,
   DEMO_MODE
 };

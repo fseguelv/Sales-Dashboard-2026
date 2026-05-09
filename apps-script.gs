@@ -3,17 +3,14 @@
  * Backend: Google Apps Script Web App
  *
  * Endpoints (POST acción):
- *   add    -> agrega nueva oportunidad (incluye mercado)
+ *   add    -> agrega nueva oportunidad
  *   update -> modifica fila existente
  *   ping   -> healthcheck
  *
- * Columna 14 NUEVA: Mercado
- * Función auxiliar:
- *   migrateMarkets()  -> ejecutar UNA vez para llenar la columna Mercado
- *                        de las filas existentes según el mapeo conocido.
+ * Columnas 14 = Mercado, 15 = Resultado
  */
 
-const SPREADSHEET_ID = 'PEGA_AQUI_EL_ID_DE_TU_SHEET'; // <-- IMPORTANTE: pega el ID de tu Sheet
+const SPREADSHEET_ID = '11AAq3BZvZ6o5RRnrD-j_4MWYZWKn1kcfsk3XXH5DDbY'; // <-- IMPORTANTE: pega el ID de tu Sheet
 
 const SHEETS = ['RC', 'MC', 'FF'];
 const VENDOR_NAMES = {
@@ -24,11 +21,11 @@ const VENDOR_NAMES = {
 
 const HEADER_ROW    = 3;
 const DATA_START_ROW = 4;
-const NUM_COLS = 14;
+const NUM_COLS = 15;
 const COLUMNS = [
   'cliente', 'objetivo', 'contacto', 'etapa', 'estimacion',
   'avance', 'precio', 'cantidad', 'avanceParcial', 'cumplimiento',
-  'fecha', 'siguientes', 'comentarios', 'mercado'
+  'fecha', 'siguientes', 'comentarios', 'mercado', 'resultado'
 ];
 const COL_INDEX = {};
 COLUMNS.forEach((k, i) => COL_INDEX[k] = i + 1);
@@ -38,7 +35,6 @@ const MARKETS = [
   'Fundición', 'Energía', 'Cemento y Cal', 'Otros Minerales', 'Otros'
 ];
 
-// Mapeo cliente -> mercado (claves en minúsculas para comparación)
 const CLIENT_TO_MARKET = {
   'magotteaux':    'Acería',
   'sodimac':       'Retail',
@@ -67,21 +63,21 @@ function lookupMarket(client) {
   if (!client) return null;
   const norm = String(client).trim().toLowerCase();
   if (CLIENT_TO_MARKET[norm]) return CLIENT_TO_MARKET[norm];
-  // Match parcial al inicio (CBB Teno -> CBB, Cementos Transex no matchea CBB)
   for (const key of Object.keys(CLIENT_TO_MARKET)) {
     if (norm.startsWith(key + ' ') || norm.startsWith(key + '-')) return CLIENT_TO_MARKET[key];
   }
   return null;
 }
 
-function ensureMercadoColumn(sheet) {
-  const header = sheet.getRange(HEADER_ROW, COL_INDEX.mercado).getValue();
-  if (!header || String(header).trim() === '') {
+function ensureExtraColumns(sheet) {
+  if (!String(sheet.getRange(HEADER_ROW, COL_INDEX.mercado).getValue() || '').trim())
     sheet.getRange(HEADER_ROW, COL_INDEX.mercado).setValue('Mercado').setFontWeight('bold');
-  }
+  if (!String(sheet.getRange(HEADER_ROW, COL_INDEX.resultado).getValue() || '').trim())
+    sheet.getRange(HEADER_ROW, COL_INDEX.resultado).setValue('Resultado').setFontWeight('bold');
 }
+function ensureMercadoColumn(sheet) { return ensureExtraColumns(sheet); }
 
-/* ----------------------------- LECTURA ----------------------------- */
+/* ===== LECTURA ===== */
 function doGet(e) {
   try {
     const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
@@ -90,7 +86,7 @@ function doGet(e) {
     SHEETS.forEach(name => {
       const sheet = ss.getSheetByName(name);
       if (!sheet) { result[name] = []; return; }
-      ensureMercadoColumn(sheet);
+      ensureExtraColumns(sheet);
 
       const lastRow = sheet.getLastRow();
       if (lastRow < DATA_START_ROW) { result[name] = []; return; }
@@ -110,7 +106,6 @@ function doGet(e) {
             if (v instanceof Date) v = v.toISOString();
             obj[key] = v === '' ? null : v;
           });
-          // Auto-clasificar mercado si está vacío y el cliente es conocido
           if (!obj.mercado || String(obj.mercado).trim() === '') {
             obj.mercado = lookupMarket(obj.cliente);
           }
@@ -132,7 +127,7 @@ function doGet(e) {
   }
 }
 
-/* ----------------------------- ESCRITURA ----------------------------- */
+/* ===== ESCRITURA ===== */
 function doPost(e) {
   try {
     if (!e.postData || !e.postData.contents) throw new Error('Body vacío');
@@ -173,9 +168,8 @@ function addRow(body) {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sheet = ss.getSheetByName(vendor);
   if (!sheet) throw new Error('Hoja no encontrada: ' + vendor);
-  ensureMercadoColumn(sheet);
+  ensureExtraColumns(sheet);
 
-  // Si no nos pasaron mercado, intentamos auto-clasificar
   if (!body.mercado || String(body.mercado).trim() === '') {
     body.mercado = lookupMarket(body.cliente) || 'Otros';
   }
@@ -218,7 +212,7 @@ function updateRow(body) {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sheet = ss.getSheetByName(vendor);
   if (!sheet) throw new Error('Hoja no encontrada: ' + vendor);
-  ensureMercadoColumn(sheet);
+  ensureExtraColumns(sheet);
 
   if (body._expectedClient !== undefined && body._expectedClient !== null) {
     const current = String(sheet.getRange(rowNum, COL_INDEX.cliente).getValue() || '').trim();
@@ -251,7 +245,7 @@ function updateRow(body) {
   });
 }
 
-/* ----------------------- HELPERS / MIGRACIÓN ----------------------- */
+/* ===== HELPERS ===== */
 function jsonResponse(obj) {
   return ContentService
     .createTextOutput(JSON.stringify(obj))
@@ -263,13 +257,6 @@ function testRead() {
   Logger.log(out.getContent());
 }
 
-/**
- * Llena la columna Mercado para todas las filas existentes según el mapeo.
- * EJECUTAR UNA SOLA VEZ desde el editor de Apps Script: seleccionar
- * 'migrateMarkets' arriba y presionar Ejecutar.
- * Las filas con cliente desconocido se listan en el log y deben clasificarse
- * manualmente (o desde el dashboard al editarlas).
- */
 function migrateMarkets() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   let totalUpdated = 0;
@@ -278,7 +265,7 @@ function migrateMarkets() {
   SHEETS.forEach(name => {
     const sheet = ss.getSheetByName(name);
     if (!sheet) return;
-    ensureMercadoColumn(sheet);
+    ensureExtraColumns(sheet);
 
     const lastRow = sheet.getLastRow();
     if (lastRow < DATA_START_ROW) return;
@@ -302,7 +289,7 @@ function migrateMarkets() {
 
   Logger.log('Migracion completada. ' + totalUpdated + ' filas actualizadas.');
   if (unknownList.length) {
-    Logger.log(unknownList.length + ' clientes sin clasificar (clasifica desde el dashboard al editarlos):');
+    Logger.log(unknownList.length + ' clientes sin clasificar:');
     unknownList.forEach(s => Logger.log('  - ' + s));
   }
   return { updated: totalUpdated, unknownCount: unknownList.length, unknown: unknownList };

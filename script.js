@@ -33,6 +33,8 @@ const MARKET_COLORS = {
 const STAGES  = (CFG.ETAPAS || []).map(s => s.label);
 const MARKET_LIST = CFG.MARKETS || [];
 const CLIENT_MARKET_MAP = CFG.CLIENT_TO_MARKET || {};
+const RESULTADOS_LIST = CFG.RESULTADOS || ['Ganada','Perdida'];
+const RESULTADO_COLORS = { 'Ganada': '#10b981', 'Perdida': '#ef4444' };
 
 const state = {
   data:          { RC: [], MC: [], FF: [] },
@@ -104,6 +106,25 @@ function formatDateForInput(v) {
   if (isNaN(d)) return '';
   return d.toISOString().slice(0, 10);
 }
+
+function toggleResultadoField(form, etapa) {
+  // Muestra/oculta el campo Resultado según la etapa
+  const fld = form.querySelector('.result-field');
+  const sel = form.querySelector('select[name=resultado]');
+  if (!fld || !sel) return;
+  const isFin = String(etapa || '').toLowerCase().includes('finalizada');
+  fld.style.display = isFin ? '' : 'none';
+  sel.required = isFin;
+  if (!isFin) sel.value = '';
+  // Poblar opciones la primera vez
+  if (sel.options.length <= 1) {
+    RESULTADOS_LIST.forEach(r => {
+      const o = document.createElement('option'); o.value = r; o.textContent = r;
+      sel.appendChild(o);
+    });
+  }
+}
+
 function lookupMarket(client) {
   if (!client) return null;
   const norm = String(client).trim().toLowerCase();
@@ -280,6 +301,33 @@ function buildMarketChips() {
 }
 
 /* ===== VISTA EJECUTIVA ===== */
+
+// Cuenta etapas, pero en 'Finalizada' sólo cuenta resultado=Ganada
+function countByStageWinOnly(rows) {
+  const counts = {};
+  STAGES.forEach(s => counts[s] = 0);
+  rows.forEach(r => {
+    if (!r.etapa) return;
+    if (r.etapa === 'Finalizada') {
+      if (String(r.resultado || '').toLowerCase() === 'ganada') counts['Finalizada']++;
+    } else {
+      counts[r.etapa] = (counts[r.etapa] || 0) + 1;
+    }
+  });
+  return counts;
+}
+function winLossOf(rows) {
+  let g = 0, p = 0;
+  rows.forEach(r => {
+    if (r.etapa === 'Finalizada') {
+      const v = String(r.resultado || '').toLowerCase();
+      if (v === 'ganada')  g++;
+      else if (v === 'perdida') p++;
+    }
+  });
+  return { ganadas: g, perdidas: p };
+}
+
 function renderExecutiveView() {
   const filtered = getFilteredExecRows();
   const total      = filtered.length;
@@ -288,16 +336,17 @@ function renderExecutiveView() {
   const finished   = filtered.filter(r => safeNum(r.avance) >= 1).length;
   const avgAvance  = total ? filtered.reduce((a,r) => a + safeNum(r.avance), 0) / total : 0;
 
+  const wlExec = winLossOf(filtered);
+  const efectExec = (wlExec.ganadas + wlExec.perdidas) > 0 ? wlExec.ganadas / (wlExec.ganadas + wlExec.perdidas) : null;
   $('#kpiGridExec').innerHTML =
     '<div class="kpi-card"><div class="kpi-label">Oportunidades <span class="kpi-icon">∑</span></div><div class="kpi-value">'+total+'</div><div class="kpi-sub">'+finished+' cerradas · '+(total-finished)+' abiertas</div></div>'+
     '<div class="kpi-card green"><div class="kpi-label">Valor estimado <span class="kpi-icon">$</span></div><div class="kpi-value">'+fmtUSD(valEstim)+'</div><div class="kpi-sub">Pipeline total filtrado</div></div>'+
     '<div class="kpi-card amber"><div class="kpi-label">Valor ponderado <span class="kpi-icon">⚖</span></div><div class="kpi-value">'+fmtUSD(valPond)+'</div><div class="kpi-sub">Estimación × % avance</div></div>'+
-    '<div class="kpi-card purple"><div class="kpi-label">% Avance promedio <span class="kpi-icon">%</span></div><div class="kpi-value">'+fmtPct(avgAvance,1)+'</div><div class="kpi-sub">Sales funnel</div></div>';
+    '<div class="kpi-card purple"><div class="kpi-label">% Avance promedio <span class="kpi-icon">%</span></div><div class="kpi-value">'+fmtPct(avgAvance,1)+'</div><div class="kpi-sub">Sales funnel</div></div>'+
+    '<div class="kpi-card green"><div class="kpi-label">Efectividad <span class="kpi-icon">★</span></div><div class="kpi-value">'+(efectExec === null ? '–' : fmtPct(efectExec,1))+'</div><div class="kpi-sub">'+wlExec.ganadas+' ganadas · '+wlExec.perdidas+' perdidas</div></div>';
 
-  // Embudo
-  const stageCounts = {};
-  STAGES.forEach(s => stageCounts[s] = 0);
-  filtered.forEach(r => { if (r.etapa) stageCounts[r.etapa] = (stageCounts[r.etapa] || 0) + 1; });
+  // Embudo (en 'Finalizada' sólo cuenta Ganadas)
+  const stageCounts = countByStageWinOnly(filtered);
   const stageLabels = Object.keys(stageCounts).filter(s => stageCounts[s] > 0);
   drawBar('chartFunnel', stageLabels, stageLabels.map(s => stageCounts[s]), stageLabels.map(s => STAGE_COLORS[s] || '#94a3b8'), { horizontal: true });
 
@@ -333,6 +382,12 @@ function renderExecutiveView() {
     { horizontal: true, money: true });
 
   // Tabla
+  // Win/Loss chart (Ganadas vs Perdidas)
+  drawDonut('chartWinLoss',
+    ['Ganadas', 'Perdidas'],
+    [wlExec.ganadas, wlExec.perdidas],
+    [RESULTADO_COLORS.Ganada, RESULTADO_COLORS.Perdida]);
+
   const sortedRows = applySort(filtered, state.execSort);
   const tbody = $('#execTable tbody');
   tbody.innerHTML = '';
@@ -381,6 +436,7 @@ function ensureVendorViewBuilt(v) {
     const meta = (CFG.ETAPAS || []).find(x => x.label === stage);
     const inp  = form.querySelector('input[name=avance]');
     if (meta && !inp.value) inp.value = Math.round(meta.avance * 100);
+    toggleResultadoField(form, stage);
   });
   // Auto-completar mercado al escribir cliente conocido
   const inpCliente = form.querySelector('input[name=cliente]');
@@ -409,16 +465,17 @@ function renderVendorView(v) {
   const finished   = rows.filter(r => safeNum(r.avance) >= 1).length;
   const avgAvance  = total ? rows.reduce((a,r) => a + safeNum(r.avance), 0) / total : 0;
 
+  const wl = winLossOf(rows);
+  const efect = (wl.ganadas + wl.perdidas) > 0 ? wl.ganadas / (wl.ganadas + wl.perdidas) : null;
   view.querySelector('.kpi-vendor').innerHTML =
     '<div class="kpi-card"><div class="kpi-label">Oportunidades</div><div class="kpi-value">'+total+'</div><div class="kpi-sub">'+finished+' finalizadas · '+(total-finished)+' abiertas</div></div>'+
     '<div class="kpi-card green"><div class="kpi-label">Valor estimado</div><div class="kpi-value">'+fmtUSD(valEstim)+'</div><div class="kpi-sub">Pipeline del vendedor</div></div>'+
     '<div class="kpi-card amber"><div class="kpi-label">Valor ponderado</div><div class="kpi-value">'+fmtUSD(valPond)+'</div><div class="kpi-sub">Estimación × % avance</div></div>'+
-    '<div class="kpi-card purple"><div class="kpi-label">% Avance promedio</div><div class="kpi-value">'+fmtPct(avgAvance,1)+'</div><div class="kpi-sub">Sales funnel</div></div>';
+    '<div class="kpi-card purple"><div class="kpi-label">% Avance promedio</div><div class="kpi-value">'+fmtPct(avgAvance,1)+'</div><div class="kpi-sub">Sales funnel</div></div>'+
+    '<div class="kpi-card green"><div class="kpi-label">Efectividad ★</div><div class="kpi-value">'+(efect === null ? '–' : fmtPct(efect,1))+'</div><div class="kpi-sub">'+wl.ganadas+' ganadas · '+wl.perdidas+' perdidas</div></div>';
 
-  // Embudo
-  const stageCounts = {};
-  STAGES.forEach(s => stageCounts[s] = 0);
-  rows.forEach(r => { if (r.etapa) stageCounts[r.etapa] = (stageCounts[r.etapa] || 0) + 1; });
+  // Embudo (Finalizada = solo Ganadas)
+  const stageCounts = countByStageWinOnly(rows);
   const labels = Object.keys(stageCounts).filter(s => stageCounts[s] > 0);
   drawVendorChart(v, 'funnel', view.querySelector('.chart-vendor-funnel'),
     { type:'bar', labels, data: labels.map(s => stageCounts[s]), bg: labels.map(s => STAGE_COLORS[s] || '#94a3b8'), horizontal:true });
@@ -450,6 +507,13 @@ function renderVendorView(v) {
       data: marketLabels.map(m => byMarket[m]),
       bg: marketLabels.map(m => MARKET_COLORS[m] || '#94a3b8'),
       money: true });
+
+  // Win/Loss del vendedor
+  drawVendorChart(v, 'winloss', view.querySelector('.chart-vendor-winloss'),
+    { type:'doughnut',
+      labels: ['Ganadas', 'Perdidas'],
+      data:   [wl.ganadas, wl.perdidas],
+      bg:     [RESULTADO_COLORS.Ganada, RESULTADO_COLORS.Perdida] });
 
   // Tabla
   const tbl = view.querySelector('.vendor-table');
@@ -510,7 +574,8 @@ async function handleAddOpportunity(e, vendor, form) {
     fecha: fd.get('fecha') || '',
     siguientes: fd.get('siguientes'),
     comentarios: fd.get('comentarios'),
-    mercado: fd.get('mercado')
+    mercado: fd.get('mercado'),
+    resultado: fd.get('resultado') || ''
   };
   try {
     const res = await postRow(vendor, payload);
@@ -567,6 +632,8 @@ function openEditModal(vendor, rowNum) {
   form.contacto.value    = r.contacto  || '';
   form.etapa.value       = r.etapa     || '';
   form.mercado.value     = r.mercado   || '';
+  if (form.resultado) form.resultado.value = r.resultado || '';
+  toggleResultadoField(form, r.etapa);
   form.estimacion.value  = r.estimacion != null ? r.estimacion : '';
   form.avance.value      = r.avance != null ? Math.round(safeNum(r.avance) * 100) : '';
   form.precio.value      = r.precio != null ? r.precio : '';
@@ -616,7 +683,8 @@ async function handleSaveEdit() {
     fecha: fd.get('fecha') || '',
     siguientes: fd.get('siguientes'),
     comentarios: fd.get('comentarios'),
-    mercado: fd.get('mercado')
+    mercado: fd.get('mercado'),
+    resultado: fd.get('resultado') || ''
   };
   const btn = $('#editModalSave');
   btn.disabled = true;
@@ -812,6 +880,7 @@ function setupEvents() {
     const meta = (CFG.ETAPAS || []).find(x => x.label === stage);
     if (meta) $('#editForm input[name=avance]').value = Math.round(meta.avance * 100);
     updateStageStepper(stage);
+    toggleResultadoField($('#editForm'), stage);
   });
   // En el modal, autocompletar mercado al cambiar cliente
   $('#editForm input[name=cliente]').addEventListener('blur', (e) => {
