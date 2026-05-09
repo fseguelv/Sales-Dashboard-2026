@@ -302,14 +302,21 @@ function buildMarketChips() {
 
 /* ===== VISTA EJECUTIVA ===== */
 
+// Helpers tolerantes a espacios/mayúsculas
+function isFinalizada(r) {
+  return String(r.etapa || '').trim().toLowerCase() === 'finalizada';
+}
+function getResultado(r) {
+  return String(r.resultado || '').trim().toLowerCase();
+}
 // Cuenta etapas, pero en 'Finalizada' sólo cuenta resultado=Ganada
 function countByStageWinOnly(rows) {
   const counts = {};
   STAGES.forEach(s => counts[s] = 0);
   rows.forEach(r => {
     if (!r.etapa) return;
-    if (r.etapa === 'Finalizada') {
-      if (String(r.resultado || '').toLowerCase() === 'ganada') counts['Finalizada']++;
+    if (isFinalizada(r)) {
+      if (getResultado(r) === 'ganada') counts['Finalizada']++;
     } else {
       counts[r.etapa] = (counts[r.etapa] || 0) + 1;
     }
@@ -319,12 +326,12 @@ function countByStageWinOnly(rows) {
 function winLossOf(rows) {
   let g = 0, p = 0;
   rows.forEach(r => {
-    if (r.etapa === 'Finalizada') {
-      const v = String(r.resultado || '').toLowerCase();
-      if (v === 'ganada')  g++;
-      else if (v === 'perdida') p++;
-    }
+    if (!isFinalizada(r)) return;
+    const v = getResultado(r);
+    if (v === 'ganada')  g++;
+    else if (v === 'perdida') p++;
   });
+  log('winLossOf:', { ganadas: g, perdidas: p, total: rows.length });
   return { ganadas: g, perdidas: p };
 }
 
@@ -382,11 +389,15 @@ function renderExecutiveView() {
     { horizontal: true, money: true });
 
   // Tabla
-  // Win/Loss chart (Ganadas vs Perdidas)
-  drawDonut('chartWinLoss',
-    ['Ganadas', 'Perdidas'],
-    [wlExec.ganadas, wlExec.perdidas],
-    [RESULTADO_COLORS.Ganada, RESULTADO_COLORS.Perdida]);
+  // Win/Loss chart (Ganadas vs Perdidas) - placeholder si todo es 0
+  if (wlExec.ganadas === 0 && wlExec.perdidas === 0) {
+    drawDonut('chartWinLoss', ['Sin finalizadas aún'], [1], ['#e3e9f2']);
+  } else {
+    drawDonut('chartWinLoss',
+      ['Ganadas (' + wlExec.ganadas + ')', 'Perdidas (' + wlExec.perdidas + ')'],
+      [wlExec.ganadas, wlExec.perdidas],
+      [RESULTADO_COLORS.Ganada, RESULTADO_COLORS.Perdida]);
+  }
 
   const sortedRows = applySort(filtered, state.execSort);
   const tbody = $('#execTable tbody');
@@ -508,12 +519,17 @@ function renderVendorView(v) {
       bg: marketLabels.map(m => MARKET_COLORS[m] || '#94a3b8'),
       money: true });
 
-  // Win/Loss del vendedor
-  drawVendorChart(v, 'winloss', view.querySelector('.chart-vendor-winloss'),
-    { type:'doughnut',
-      labels: ['Ganadas', 'Perdidas'],
-      data:   [wl.ganadas, wl.perdidas],
-      bg:     [RESULTADO_COLORS.Ganada, RESULTADO_COLORS.Perdida] });
+  // Win/Loss del vendedor - placeholder si todo es 0
+  if (wl.ganadas === 0 && wl.perdidas === 0) {
+    drawVendorChart(v, 'winloss', view.querySelector('.chart-vendor-winloss'),
+      { type:'doughnut', labels: ['Sin finalizadas aún'], data: [1], bg: ['#e3e9f2'] });
+  } else {
+    drawVendorChart(v, 'winloss', view.querySelector('.chart-vendor-winloss'),
+      { type:'doughnut',
+        labels: ['Ganadas ('+wl.ganadas+')', 'Perdidas ('+wl.perdidas+')'],
+        data:   [wl.ganadas, wl.perdidas],
+        bg:     [RESULTADO_COLORS.Ganada, RESULTADO_COLORS.Perdida] });
+  }
 
   // Tabla
   const tbl = view.querySelector('.vendor-table');
