@@ -148,9 +148,13 @@ async function loadData(showSpinner = true) {
   try {
     if (useDemo) {
       state.isDemo = true;
-      state.data = window.DEMO_DATA || { RC: [], MC: [], FF: [] };
+      // Cargar de localStorage si existe (cambios persistidos localmente)
+      try {
+        const stored = localStorage.getItem('dashboardData_v3');
+        state.data = stored ? JSON.parse(stored) : (window.DEMO_DATA || { RC: [], MC: [], FF: [] });
+      } catch(e) { state.data = window.DEMO_DATA || { RC: [], MC: [], FF: [] }; }
       state.lastUpdate = new Date();
-      setStatus('demo', 'Modo DEMO · datos de ejemplo');
+      setStatus('demo', 'Modo LOCAL · cambios se guardan en este navegador');
     } else {
       log('GET', apiUrl);
       const res = await fetch(apiUrl, { method: 'GET' });
@@ -178,6 +182,14 @@ function renderConfigBanner() {
   el.innerHTML = state.isDemo
     ? '<div class="config-banner"><span>⚠️</span><div><strong>Modo DEMO activo</strong>Editá <code>config.js</code> con la URL del Web App de Apps Script.</div></div>'
     : '';
+}
+
+
+function saveLocalData() {
+  try {
+    localStorage.setItem('dashboardData_v3', JSON.stringify(state.data));
+    log('Datos guardados en localStorage');
+  } catch(e) { console.error('No se pudo guardar en localStorage:', e); }
 }
 
 /* ===== AGREGADOS ===== */
@@ -245,7 +257,9 @@ function handleSortHeader(table, col) {
 async function postRow(vendor, payload) {
   if (state.isDemo) {
     state.data[vendor] = state.data[vendor] || [];
+    payload._row = (state.data[vendor].length ? Math.max(...state.data[vendor].map(r => r._row || 0)) + 1 : 100);
     state.data[vendor].push(payload);
+    saveLocalData();
     return { status: 'ok', demo: true };
   }
   log('POST', vendor, payload);
@@ -627,6 +641,11 @@ function openEditModal(vendor, rowNum) {
   if (selMarket.options.length <= 1) {
     MARKET_LIST.forEach(m => { const o = document.createElement('option'); o.value = m; o.textContent = m; selMarket.appendChild(o); });
   }
+  // FIX: poblar opciones de resultado ANTES de asignar valor
+  const selRes = $('#editForm select[name=resultado]');
+  if (selRes && selRes.options.length <= 1) {
+    RESULTADOS_LIST.forEach(r => { const o = document.createElement('option'); o.value = r; o.textContent = r; selRes.appendChild(o); });
+  }
 
   // Stepper
   const stepper = $('#editStageStepper');
@@ -689,6 +708,7 @@ async function handleSaveEdit() {
     const meta = (CFG.ETAPAS || []).find(x => x.label === stage);
     avance = meta ? meta.avance * 100 : 0;
   }
+  log('handleSaveEdit: campo resultado en form =', fd.get('resultado'));
   const payload = {
     action: 'update', vendor, _row: row, _expectedClient: expectedClient,
     cliente: fd.get('cliente'), objetivo: fd.get('objetivo'),
@@ -709,7 +729,8 @@ async function handleSaveEdit() {
     if (state.isDemo) {
       const target = findRow(vendor, row);
       if (target) Object.assign(target, payload);
-      showToast('Cambios guardados (demo)', payload.cliente + ' · ' + payload.objetivo, 'success');
+      saveLocalData();
+      showToast('Cambios guardados (local)', payload.cliente + ' · ' + payload.objetivo, 'success');
     } else {
       log('POST update', payload);
       const res = await fetch(CFG.API_URL, { method: 'POST', body: JSON.stringify(payload) });
@@ -743,7 +764,7 @@ async function handleAdvanceStage(vendor, rowNum) {
   const newAvance = meta ? meta.avance : Math.min(safeNum(r.avance) + 0.2, 1);
   const payload = { action: 'update', vendor, _row: rowNum, _expectedClient: r.cliente, etapa: next, avance: newAvance };
   try {
-    if (state.isDemo) { r.etapa = next; r.avance = newAvance; }
+    if (state.isDemo) { r.etapa = next; r.avance = newAvance; saveLocalData(); }
     else {
       log('POST advance', payload);
       const res = await fetch(CFG.API_URL, { method: 'POST', body: JSON.stringify(payload) });
