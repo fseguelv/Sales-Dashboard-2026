@@ -108,21 +108,9 @@ function formatDateForInput(v) {
 }
 
 function toggleResultadoField(form, etapa) {
-  // Muestra/oculta el campo Resultado según la etapa
+  // Funcion deshabilitada: ya no se usa el campo Resultado
   const fld = form.querySelector('.result-field');
-  const sel = form.querySelector('select[name=resultado]');
-  if (!fld || !sel) return;
-  const isFin = String(etapa || '').toLowerCase().includes('finalizada');
-  fld.style.display = isFin ? '' : 'none';
-  sel.required = isFin;
-  if (!isFin) sel.value = '';
-  // Poblar opciones la primera vez
-  if (sel.options.length <= 1) {
-    RESULTADOS_LIST.forEach(r => {
-      const o = document.createElement('option'); o.value = r; o.textContent = r;
-      sel.appendChild(o);
-    });
-  }
+  if (fld) fld.style.display = 'none';
 }
 
 function lookupMarket(client) {
@@ -325,15 +313,12 @@ function getResultado(r) {
 }
 // Cuenta etapas, pero en 'Finalizada' sólo cuenta resultado=Ganada
 function countByStageWinOnly(rows) {
+  // Cuenta normal: incluye TODAS las finalizadas (sin distinguir resultado)
   const counts = {};
   STAGES.forEach(s => counts[s] = 0);
   rows.forEach(r => {
-    if (!r.etapa) return;
-    if (isFinalizada(r)) {
-      if (getResultado(r) === 'ganada') counts['Finalizada']++;
-    } else {
-      counts[r.etapa] = (counts[r.etapa] || 0) + 1;
-    }
+    if (r.etapa && counts.hasOwnProperty(r.etapa)) counts[r.etapa]++;
+    else if (r.etapa) counts[r.etapa] = (counts[r.etapa] || 0) + 1;
   });
   return counts;
 }
@@ -357,14 +342,11 @@ function renderExecutiveView() {
   const finished   = filtered.filter(r => safeNum(r.avance) >= 1).length;
   const avgAvance  = total ? filtered.reduce((a,r) => a + safeNum(r.avance), 0) / total : 0;
 
-  const wlExec = winLossOf(filtered);
-  const efectExec = (wlExec.ganadas + wlExec.perdidas) > 0 ? wlExec.ganadas / (wlExec.ganadas + wlExec.perdidas) : null;
   $('#kpiGridExec').innerHTML =
     '<div class="kpi-card"><div class="kpi-label">Oportunidades <span class="kpi-icon">∑</span></div><div class="kpi-value">'+total+'</div><div class="kpi-sub">'+finished+' cerradas · '+(total-finished)+' abiertas</div></div>'+
     '<div class="kpi-card green"><div class="kpi-label">Valor estimado <span class="kpi-icon">$</span></div><div class="kpi-value">'+fmtUSD(valEstim)+'</div><div class="kpi-sub">Pipeline total filtrado</div></div>'+
     '<div class="kpi-card amber"><div class="kpi-label">Valor ponderado <span class="kpi-icon">⚖</span></div><div class="kpi-value">'+fmtUSD(valPond)+'</div><div class="kpi-sub">Estimación × % avance</div></div>'+
-    '<div class="kpi-card purple"><div class="kpi-label">% Avance promedio <span class="kpi-icon">%</span></div><div class="kpi-value">'+fmtPct(avgAvance,1)+'</div><div class="kpi-sub">Sales funnel</div></div>'+
-    '<div class="kpi-card green"><div class="kpi-label">Efectividad <span class="kpi-icon">★</span></div><div class="kpi-value">'+(efectExec === null ? '–' : fmtPct(efectExec,1))+'</div><div class="kpi-sub">'+wlExec.ganadas+' ganadas · '+wlExec.perdidas+' perdidas</div></div>';
+    '<div class="kpi-card purple"><div class="kpi-label">% Avance promedio <span class="kpi-icon">%</span></div><div class="kpi-value">'+fmtPct(avgAvance,1)+'</div><div class="kpi-sub">Sales funnel</div></div>';
 
   // Embudo (en 'Finalizada' sólo cuenta Ganadas)
   const stageCounts = countByStageWinOnly(filtered);
@@ -403,16 +385,6 @@ function renderExecutiveView() {
     { horizontal: true, money: true });
 
   // Tabla
-  // Win/Loss chart (Ganadas vs Perdidas) - placeholder si todo es 0
-  if (wlExec.ganadas === 0 && wlExec.perdidas === 0) {
-    drawDonut('chartWinLoss', ['Sin finalizadas aún'], [1], ['#e3e9f2']);
-  } else {
-    drawDonut('chartWinLoss',
-      ['Ganadas (' + wlExec.ganadas + ')', 'Perdidas (' + wlExec.perdidas + ')'],
-      [wlExec.ganadas, wlExec.perdidas],
-      [RESULTADO_COLORS.Ganada, RESULTADO_COLORS.Perdida]);
-  }
-
   const sortedRows = applySort(filtered, state.execSort);
   const tbody = $('#execTable tbody');
   tbody.innerHTML = '';
@@ -490,14 +462,11 @@ function renderVendorView(v) {
   const finished   = rows.filter(r => safeNum(r.avance) >= 1).length;
   const avgAvance  = total ? rows.reduce((a,r) => a + safeNum(r.avance), 0) / total : 0;
 
-  const wl = winLossOf(rows);
-  const efect = (wl.ganadas + wl.perdidas) > 0 ? wl.ganadas / (wl.ganadas + wl.perdidas) : null;
   view.querySelector('.kpi-vendor').innerHTML =
     '<div class="kpi-card"><div class="kpi-label">Oportunidades</div><div class="kpi-value">'+total+'</div><div class="kpi-sub">'+finished+' finalizadas · '+(total-finished)+' abiertas</div></div>'+
     '<div class="kpi-card green"><div class="kpi-label">Valor estimado</div><div class="kpi-value">'+fmtUSD(valEstim)+'</div><div class="kpi-sub">Pipeline del vendedor</div></div>'+
     '<div class="kpi-card amber"><div class="kpi-label">Valor ponderado</div><div class="kpi-value">'+fmtUSD(valPond)+'</div><div class="kpi-sub">Estimación × % avance</div></div>'+
-    '<div class="kpi-card purple"><div class="kpi-label">% Avance promedio</div><div class="kpi-value">'+fmtPct(avgAvance,1)+'</div><div class="kpi-sub">Sales funnel</div></div>'+
-    '<div class="kpi-card green"><div class="kpi-label">Efectividad ★</div><div class="kpi-value">'+(efect === null ? '–' : fmtPct(efect,1))+'</div><div class="kpi-sub">'+wl.ganadas+' ganadas · '+wl.perdidas+' perdidas</div></div>';
+    '<div class="kpi-card purple"><div class="kpi-label">% Avance promedio</div><div class="kpi-value">'+fmtPct(avgAvance,1)+'</div><div class="kpi-sub">Sales funnel</div></div>';
 
   // Embudo (Finalizada = solo Ganadas)
   const stageCounts = countByStageWinOnly(rows);
@@ -533,17 +502,7 @@ function renderVendorView(v) {
       bg: marketLabels.map(m => MARKET_COLORS[m] || '#94a3b8'),
       money: true });
 
-  // Win/Loss del vendedor - placeholder si todo es 0
-  if (wl.ganadas === 0 && wl.perdidas === 0) {
-    drawVendorChart(v, 'winloss', view.querySelector('.chart-vendor-winloss'),
-      { type:'doughnut', labels: ['Sin finalizadas aún'], data: [1], bg: ['#e3e9f2'] });
-  } else {
-    drawVendorChart(v, 'winloss', view.querySelector('.chart-vendor-winloss'),
-      { type:'doughnut',
-        labels: ['Ganadas ('+wl.ganadas+')', 'Perdidas ('+wl.perdidas+')'],
-        data:   [wl.ganadas, wl.perdidas],
-        bg:     [RESULTADO_COLORS.Ganada, RESULTADO_COLORS.Perdida] });
-  }
+
 
   // Tabla
   const tbl = view.querySelector('.vendor-table');
@@ -605,7 +564,6 @@ async function handleAddOpportunity(e, vendor, form) {
     siguientes: fd.get('siguientes'),
     comentarios: fd.get('comentarios'),
     mercado: fd.get('mercado'),
-    resultado: fd.get('resultado') || ''
   };
   try {
     const res = await postRow(vendor, payload);
@@ -720,7 +678,6 @@ async function handleSaveEdit() {
     siguientes: fd.get('siguientes'),
     comentarios: fd.get('comentarios'),
     mercado: fd.get('mercado'),
-    resultado: fd.get('resultado') || ''
   };
   const btn = $('#editModalSave');
   btn.disabled = true;
