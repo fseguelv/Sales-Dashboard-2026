@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sales Dashboard 2026 · Refractarios Iunge</title>
+
+<!-- Hojas de estilo -->
+<link rel="stylesheet" href="style.css">
+
+<!-- Librería de gráficos -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<!-- ===================== HEADER ===================== -->
+<header class="app-header">
+  <div class="brand">
+    <div class="brand-mark">RI</div>
+    <div class="brand-text">
+      <h1>Sales Dashboard 2026</h1>
+      <p>Refractarios Iunge · Plan de Acción Comercial</p>
+    </div>
+  </div>
+  <div class="header-actions">
+    <span class="last-update" id="statusIndicator">
+      <span class="dot-status" id="statusDot"></span>
+      <span id="statusText">Cargando...</span>
+    </span>
+    <button class="btn" id="refreshBtn" title="Refrescar datos">
+      <span>↻</span> <span>Refrescar</span>
+    </button>
+  </div>
+</header>
+
+<!-- ===================== TABS ===================== -->
+<nav class="tabs" id="tabs">
+  <button class="tab active" data-view="executive">Vista Ejecutiva</button>
+  <button class="tab" data-view="RC">Ricardo Cepeda <span class="badge" id="badgeRC">0</span></button>
+  <button class="tab" data-view="MC">Mónica Castillo <span class="badge" id="badgeMC">0</span></button>
+  <button class="tab" data-view="FF">Franco Fernández <span class="badge" id="badgeFF">0</span></button>
+</nav>
+
+<!-- ===================== VISTA EJECUTIVA ===================== -->
+<section class="view active" id="view-executive">
+  <div class="view-title">
+    <div>
+      <h2>Vista Ejecutiva Consolidada</h2>
+      <p>Embudo comercial agregado de los tres vendedores · Plan 2026</p>
+    </div>
+  </div>
+
+  <div id="configBanner"></div>
+
+  <div class="kpi-grid" id="kpiGridExec"></div>
+
+  <div class="filter-bar">
+    <div class="filter-group">
+      <span class="filter-label">Vendedor</span>
+      <span class="chip active" data-filter="vendor" data-value="ALL">Todos</span>
+      <span class="chip" data-filter="vendor" data-value="RC">RC</span>
+      <span class="chip" data-filter="vendor" data-value="MC">MC</span>
+      <span class="chip" data-filter="vendor" data-value="FF">FF</span>
+    </div>
+    <div class="filter-group" id="stageChips">
+      <span class="filter-label">Etapa</span>
+      <span class="chip active" data-filter="stage" data-value="ALL">Todas</span>
+    </div>
+    <div class="filter-group" id="marketChips">
+      <span class="filter-label">Mercado</span>
+      <span class="chip active" data-filter="market" data-value="ALL">Todos</span>
+    </div>
+    <div class="filter-group">
+      <input type="text" class="search-input" id="clientSearch" placeholder="Buscar cliente...">
+    </div>
+  </div>
+
+  <div class="charts-grid">
+    <div class="chart-card span-2">
+      <h3>Embudo comercial · Distribución por etapa</h3>
+      <div class="chart-wrap"><canvas id="chartFunnel"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <h3>Distribución por vendedor</h3>
+      <div class="chart-wrap"><canvas id="chartByVendor"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <h3>Top 8 clientes por valor estimado</h3>
+      <div class="chart-wrap"><canvas id="chartTopClients"></canvas></div>
+    </div>
+    <div class="chart-card span-2">
+      <h3>Distribución por mercado · Pipeline estimado</h3>
+      <div class="chart-wrap"><canvas id="chartByMarket"></canvas></div>
+    </div>
+  </div>
+
+  <div class="table-card">
+    <div class="table-card-header">
+      <h3>Detalle de oportunidades</h3>
+      <span class="last-update" id="execTableCount">0 oportunidades</span>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table editable" id="execTable">
+        <thead>
+          <tr>
+            <th class="sortable" data-sort="_vendor">Vend.</th>
+            <th class="sortable" data-sort="cliente">Cliente</th>
+            <th class="sortable" data-sort="mercado">Mercado</th>
+            <th class="sortable" data-sort="objetivo">Objetivo</th>
+            <th class="sortable" data-sort="etapa">Etapa</th>
+            <th class="sortable" data-sort="estimacion">Estim. USD</th>
+            <th class="sortable" data-sort="avance">Avance</th>
+            <th class="sortable" data-sort="fecha">Cierre</th>
+            <th class="col-actions">Acciones</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ============== PLANTILLA POR VENDEDOR (RC/MC/FF) ============== -->
+<template id="vendorViewTemplate">
+  <div class="vendor-hero">
+    <div class="vendor-avatar"></div>
+    <div>
+      <h2 class="vendor-name"></h2>
+      <p class="vendor-sub">Plan de Acción Comercial · 2026</p>
+    </div>
+  </div>
+
+  <div class="kpi-grid kpi-vendor"></div>
+
+  <div class="charts-grid">
+    <div class="chart-card">
+      <h3>Embudo individual</h3>
+      <div class="chart-wrap"><canvas class="chart-vendor-funnel"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <h3>Distribución de avance</h3>
+      <div class="chart-wrap"><canvas class="chart-vendor-progress"></canvas></div>
+    </div>
+    <div class="chart-card span-2">
+      <h3>Distribución por mercado · Pipeline estimado del vendedor</h3>
+      <div class="chart-wrap"><canvas class="chart-vendor-market"></canvas></div>
+    </div>
+  </div>
+
+  <div class="form-card">
+    <h3>Agregar nueva oportunidad</h3>
+    <p class="form-hint">Esta oportunidad se guarda en la pestaña del vendedor en Google Sheets.</p>
+    <form class="vendor-form">
+      <div class="form-grid">
+        <div class="form-field">
+          <label>Cliente *</label>
+          <input type="text" name="cliente" required>
+        </div>
+        <div class="form-field">
+          <label>Objetivo de venta *</label>
+          <input type="text" name="objetivo" required>
+        </div>
+        <div class="form-field">
+          <label>Nombre del contacto</label>
+          <input type="text" name="contacto">
+        </div>
+        <div class="form-field">
+          <label>Etapa de ventas *</label>
+          <select name="etapa" required>
+            <option value="">Seleccionar...</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label>Mercado *</label>
+          <select name="mercado" required>
+            <option value="">Seleccionar...</option>
+          </select>
+          <small class="field-hint mercado-hint" style="font-size:11px;color:var(--text-muted);"></small>
+        </div>
+        <div class="form-field">
+          <label>Estimación negocio (USD)</label>
+          <input type="number" name="estimacion" min="0" step="100">
+        </div>
+        <div class="form-field">
+          <label>% Grado de avance</label>
+          <input type="number" name="avance" min="0" max="100" step="1" placeholder="auto según etapa">
+        </div>
+        <div class="form-field">
+          <label>Precio unitario estimado</label>
+          <input type="number" name="precio" min="0" step="1">
+        </div>
+        <div class="form-field">
+          <label>Fecha de cierre</label>
+          <input type="date" name="fecha">
+        </div>
+        <div class="form-field span-2">
+          <label>Siguientes pasos</label>
+          <input type="text" name="siguientes">
+        </div>
+        <div class="form-field span-2">
+          <label>Comentarios</label>
+          <textarea name="comentarios"></textarea>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="reset" class="btn">Limpiar</button>
+        <button type="submit" class="btn primary">Agregar oportunidad</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="table-card">
+    <div class="table-card-header">
+      <h3>Oportunidades del vendedor</h3>
+      <span class="last-update vendor-table-count">0 oportunidades</span>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table vendor-table editable">
+        <thead>
+          <tr>
+            <th class="sortable" data-sort="cliente">Cliente</th>
+            <th class="sortable" data-sort="mercado">Mercado</th>
+            <th class="sortable" data-sort="objetivo">Objetivo</th>
+            <th class="sortable" data-sort="etapa">Etapa</th>
+            <th class="sortable" data-sort="estimacion">Estim. USD</th>
+            <th class="sortable" data-sort="avance">Avance</th>
+            <th class="sortable" data-sort="fecha">Cierre</th>
+            <th>Siguientes pasos</th>
+            <th class="col-actions">Acciones</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</template>
+
+<!-- Contenedores que rellena script.js a partir del template -->
+<section class="view" id="view-RC"></section>
+<section class="view" id="view-MC"></section>
+<section class="view" id="view-FF"></section>
+
+<!-- Overlay de carga -->
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="spinner"></div>
+  <div>Cargando datos...</div>
+</div>
+
+<!-- Notificaciones -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- ===================== MODAL EDITAR OPORTUNIDAD ===================== -->
+<div class="modal-overlay" id="editModal" role="dialog" aria-modal="true">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>
+        Editar oportunidad
+        <small id="editModalSubtitle"></small>
+      </h3>
+      <button class="modal-close" id="editModalClose" aria-label="Cerrar">×</button>
+    </div>
+    <div class="modal-body">
+      <form id="editForm">
+        <!-- Stepper visual de etapas (click rápido) -->
+        <div class="stage-stepper" id="editStageStepper"></div>
+
+        <div class="form-grid">
+          <div class="form-section-title">Información general</div>
+
+          <div class="form-field">
+            <label>Cliente *</label>
+            <input type="text" name="cliente" required>
+          </div>
+          <div class="form-field">
+            <label>Objetivo de venta *</label>
+            <input type="text" name="objetivo" required>
+          </div>
+          <div class="form-field">
+            <label>Nombre del contacto</label>
+            <input type="text" name="contacto">
+          </div>
+          <div class="form-field">
+            <label>Etapa de ventas *</label>
+            <select name="etapa" required>
+              <option value="">Seleccionar...</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label>Mercado *</label>
+            <select name="mercado" required>
+              <option value="">Seleccionar...</option>
+            </select>
+          </div>
+
+          <div class="form-section-title">Valor y avance</div>
+
+          <div class="form-field">
+            <label>Estimación negocio (USD)</label>
+            <input type="number" name="estimacion" min="0" step="100">
+          </div>
+          <div class="form-field">
+            <label>% Grado de avance</label>
+            <input type="number" name="avance" min="0" max="100" step="1">
+          </div>
+          <div class="form-field">
+            <label>Precio unitario estimado</label>
+            <input type="number" name="precio" min="0" step="1">
+          </div>
+          <div class="form-field">
+            <label>Fecha de cierre</label>
+            <input type="date" name="fecha">
+          </div>
+
+          <div class="form-section-title">Seguimiento</div>
+
+          <div class="form-field span-2">
+            <label>Siguientes pasos</label>
+            <input type="text" name="siguientes">
+          </div>
+          <div class="form-field span-2">
+            <label>Comentarios</label>
+            <textarea name="comentarios"></textarea>
+          </div>
+        </div>
+      </form>
+    </div>
+    <div class="modal-footer">
+      <span class="footer-info" id="editModalInfo"></span>
+      <div class="footer-actions">
+        <button type="button" class="btn" id="editModalCancel">Cancelar</button>
+        <button type="button" class="btn primary" id="editModalSave">Guardar cambios</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  Sales Dashboard 2026 · Refractarios Iunge · Datos en vivo desde Google Sheets
+</footer>
+
+<!-- ====== ORDEN DE CARGA OBLIGATORIO ======
+     1) config.js   define API_URL y opciones
+     2) demo-data.js datos de respaldo (modo demo)
+     3) script.js   lógica que CONSUME API_URL
+     ======================================== -->
+<script src="config.js"></script>
+<script src="demo-data.js"></script>
+<script src="script.js"></script>
+</body>
+</html>
