@@ -8,10 +8,122 @@
 <!-- Hojas de estilo -->
 <link rel="stylesheet" href="style.css">
 
+<style>
+/* ===== LOGIN OVERLAY ===== */
+#loginOverlay {
+  position: fixed; inset: 0; z-index: 9999;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 60%, #0f2027 100%);
+  display: flex; align-items: center; justify-content: center;
+  font-family: inherit;
+}
+#loginOverlay.hidden { display: none; }
+
+.login-box {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 18px;
+  padding: 48px 44px 40px;
+  width: 360px;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.5);
+  backdrop-filter: blur(12px);
+  text-align: center;
+}
+.login-logo {
+  width: 60px; height: 60px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #f97316, #ea580c);
+  color: #fff;
+  font-size: 22px; font-weight: 800;
+  display: inline-flex; align-items: center; justify-content: center;
+  margin-bottom: 20px;
+  box-shadow: 0 4px 18px rgba(249,115,22,0.4);
+}
+.login-title {
+  color: #f1f5f9; font-size: 20px; font-weight: 700;
+  margin: 0 0 4px;
+}
+.login-sub {
+  color: #94a3b8; font-size: 13px; margin: 0 0 32px;
+}
+.login-field {
+  margin-bottom: 16px; text-align: left;
+}
+.login-field label {
+  display: block; color: #94a3b8;
+  font-size: 11px; font-weight: 600;
+  letter-spacing: .06em; text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.login-field input {
+  width: 100%; box-sizing: border-box;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  color: #f1f5f9; font-size: 14px;
+  padding: 10px 14px;
+  outline: none; transition: border .2s;
+}
+.login-field input:focus {
+  border-color: #f97316;
+  background: rgba(249,115,22,0.08);
+}
+.login-field input::placeholder { color: #475569; }
+.login-user-display {
+  min-height: 18px; font-size: 12px;
+  color: #f97316; font-weight: 600;
+  margin-top: 5px; letter-spacing: .02em;
+}
+.login-error {
+  color: #f87171; font-size: 12px;
+  min-height: 18px; margin: -4px 0 10px;
+  text-align: center;
+}
+.login-btn {
+  width: 100%; padding: 11px;
+  background: linear-gradient(135deg, #f97316, #ea580c);
+  color: #fff; border: none; border-radius: 8px;
+  font-size: 14px; font-weight: 700;
+  cursor: pointer; transition: opacity .2s, transform .1s;
+  margin-top: 4px;
+}
+.login-btn:hover { opacity: .9; }
+.login-btn:active { transform: scale(.98); }
+</style>
+
 <!-- Librería de gráficos -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
+
+<!-- ===================== LOGIN OVERLAY ===================== -->
+<div id="loginOverlay">
+  <div class="login-box">
+    <div class="login-logo">RI</div>
+    <p class="login-title">Sales Dashboard 2026</p>
+    <p class="login-sub">Refractarios Iunge · Plan de Acción Comercial</p>
+
+    <form id="loginForm" autocomplete="off">
+      <div class="login-field">
+        <label>Usuario</label>
+        <input
+          type="text"
+          id="loginUser"
+          placeholder="Ingrese su inicial…"
+          autocomplete="off"
+          spellcheck="false"
+          maxlength="1"
+        >
+        <div class="login-user-display" id="loginUserDisplay"></div>
+      </div>
+      <div class="login-field">
+        <label>Contraseña</label>
+        <input type="password" id="loginPass" placeholder="••••••••••" autocomplete="off">
+      </div>
+      <div class="login-error" id="loginError"></div>
+      <button type="submit" class="login-btn">Ingresar</button>
+    </form>
+  </div>
+</div>
 
 <!-- ===================== HEADER ===================== -->
 <header class="app-header">
@@ -346,5 +458,82 @@
 <script src="config.js"></script>
 <script src="demo-data.js"></script>
 <script src="script.js"></script>
+
+<!-- ===================== LOGIN SCRIPT ===================== -->
+<script>
+(function () {
+  /*
+   * ── Mapa de iniciales → usuario ──
+   *  m  = Mónica Castillo
+   *  f  = Franco Fernández   (F de Franco / Fernández)
+   *  s  = Francisco Seguel   (S de Seguel, para no colisionar con F de Franco)
+   *  r  = Ricardo Cepeda
+   *  o  = Otros
+   */
+  const USER_MAP = {
+    'm': 'Mónica Castillo',
+    'f': 'Franco Fernández',
+    's': 'Francisco Seguel',
+    'r': 'Ricardo Cepeda',
+    'o': 'Otros'
+  };
+  const PASSWORD = 'Iunge2026!';
+  const SESSION_KEY = 'ri_dash_user';
+
+  const overlay   = document.getElementById('loginOverlay');
+  const form      = document.getElementById('loginForm');
+  const inputUser = document.getElementById('loginUser');
+  const inputPass = document.getElementById('loginPass');
+  const userDisp  = document.getElementById('loginUserDisplay');
+  const errDiv    = document.getElementById('loginError');
+
+  /* ── Si ya hay sesión, ocultar overlay ── */
+  if (sessionStorage.getItem(SESSION_KEY)) {
+    overlay.classList.add('hidden');
+  }
+
+  /* ── Autocompletado silencioso: muestra nombre, vacía el campo ── */
+  inputUser.addEventListener('input', function () {
+    const key  = this.value.toLowerCase().trim();
+    const name = USER_MAP[key] || null;
+    if (name) {
+      userDisp.textContent = '✓ ' + name;
+      this.dataset.resolved = key;
+    } else if (key) {
+      userDisp.textContent = '';
+      this.dataset.resolved = '';
+    } else {
+      userDisp.textContent = '';
+      this.dataset.resolved = '';
+    }
+    this.value = '';   // vaciar visualmente — la inicial no se muestra
+    errDiv.textContent = '';
+  });
+
+  /* ── Envío del formulario ── */
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    const resolvedKey = inputUser.dataset.resolved || '';
+    const name = USER_MAP[resolvedKey] || null;
+    const pass = inputPass.value;
+
+    if (!name) {
+      errDiv.textContent = 'Usuario no reconocido. Ingrese la inicial correcta.';
+      inputUser.focus();
+      return;
+    }
+    if (pass !== PASSWORD) {
+      errDiv.textContent = 'Contraseña incorrecta.';
+      inputPass.value = '';
+      inputPass.focus();
+      return;
+    }
+
+    /* Acceso concedido */
+    sessionStorage.setItem(SESSION_KEY, name);
+    overlay.classList.add('hidden');
+  });
+})();
+</script>
 </body>
 </html>
